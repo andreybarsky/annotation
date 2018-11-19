@@ -13,11 +13,11 @@ class BoundingBox(object):
     names_colours =[('PalletBody', (255, 255, 255)),
                     ('PalletFace', (0,   255, 0  )),
                     ('Pedestrian', (0,   0,   255)),
-                    ('Stillage',   (255, 0,   255)),
+                    ('Bay',        (255, 0,   255)),
                     ('Load',       (255, 0,   0  )),
                     ('Truck',      (255, 255, 0  )),
                     ('Racking',    (0,   255, 255))]
-    
+
     # set up mappings from class numbers to class names and vice versa:
     num2name = [name for name, colour in names_colours]
     name2num = {name:num for num, name in enumerate(num2name)}
@@ -81,15 +81,18 @@ class BoundingBox(object):
 
     def draw(self, image):
         """takes an image, returns it with this bbox drawn on it"""
-        cv2.rectangle(image, (self.xmin, self.ymin), (self.xmax, self.ymax), self.colour, 2)
-        cv2.putText(image, self.name, (self.xmin, self.ymin-10), cv2.FONT_HERSHEY_SIMPLEX, fontScale=1, color=self.colour)
+        xmin, xmax, ymin, ymax = int(self.xmin), int(self.xmax), int(self.ymin), int(self.ymax)
+        cv2.rectangle(image, (xmin, ymin), (xmax, ymax), self.colour, 2)
+        cv2.putText(image, self.name, (xmin, ymin-10), cv2.FONT_HERSHEY_SIMPLEX, fontScale=1, color=self.colour)
         return image
 
 
 class Annotation(object):
     """a container for several bboxes arranged on an image, in order of insertion"""
-    def __init__(self, bboxes=None):
-        if bboxes is None:
+    def __init__(self, bboxes=None, load_from=None):
+        if load_from is not None:
+            bboxes = self.load_bboxes_from_file(load_from)
+        elif bboxes is None:
             bboxes = []
         self.bboxes = bboxes
     def __len__(self):
@@ -113,7 +116,6 @@ class Annotation(object):
         for idx, bbox in enumerate(self):
             new_anno.append(bbox.resize(factor))
         return new_anno
-
 
     def to_kitti(self):
         """takes a list of bboxes and outputs string in KITTI format"""
@@ -139,7 +141,8 @@ class Annotation(object):
         """
         rows = []
         for bbox in self:
-            row_vals = [0, 0, 0, *bbox.bounds, 0, 0, 0, 0] # we don't care about the other values for now
+            l, r, t, b = bbox.bounds
+            row_vals = [0, 0, 0, l, t, r, b, 0, 0, 0, 0] # we don't care about the other values for now
             row_vals = [str(v) for v in row_vals]
             row = [bbox.name] + row_vals
             row_str = ' '.join(row)
@@ -148,7 +151,7 @@ class Annotation(object):
         return kitti_str
 
     def which_bbox(self, x, y):
-        """given a click location, return the index of the bounding box that the 
+        """given a click location, return the index of the bounding box that the
         click was in, from newest first"""
         for idx, bbox in enumerate(reversed(self)): # reversed so we process oldest boxes last
             xmin, xmax, ymin, ymax = bbox.bounds
@@ -179,6 +182,20 @@ class Annotation(object):
         replines.append('-----')
         return '\n'.join(replines)
 
+    def load_bboxes_from_file(self, filename):
+        with open(filename, 'r') as file:
+            text = file.read()
+        lines = text.splitlines()
+
+        bboxes = []
+        for line in lines:
+            vals = line.split(' ')
+            class_name = vals[0]
+            rest_vals = [int(float(val)) for val in vals[1:]]
+            xmin, ymin, xmax, ymax = rest_vals[3:7]
+            bbox = BoundingBox(class_name, xmin, xmax, ymin, ymax)
+            bboxes.append(bbox)
+        return bboxes
 
 class AnnotationSession(object):
     class_shortcuts = {'b': 'PalletBody',
@@ -194,26 +211,26 @@ class AnnotationSession(object):
         """accepts a list of filepaths to images for annotating, and begins a session to annotate them"""
         self.image_dir = image_dir
         self.label_dir = label_dir
-        
+
         self.image_queue = [os.path.join(image_dir, filename) for filename in os.listdir(image_dir)]
         self.max_dims = max_dims
 
         self.btn_down = False
         self.current_bbox = None
-        
+
         self.current_mouse_position = (0,0)
 
     def help_message(self):
         """Print user instructions to console"""
         print("""  Annotation session started.
   Press 'n' for next image, and 'q' to quit.
-  
+
   Class shortcuts:""")
         for k,v in self.class_shortcuts.items():
             print(f'   {v}: {k}')
-        
+
     def process_image(self, img_path):
-        self.current_annotation = Annotation()
+        """Loads, resizes, and prompts for annotation of a single example"""
         img_name = img_path.split(os.sep)[-1]
         print(f'Img_name: {img_name}')
         img_name_noext = img_name.split('.')[0]
@@ -221,14 +238,28 @@ class AnnotationSession(object):
         print(f'Label name: {label_name}')
 
         img = self.load_image(img_path)
+
+        label_path = os.path.join(self.label_dir, label_name)
+        if os.path.exists(label_path):
+            print('Loading existing annotation from: %s' % label_path)
+            anno = Annotation(load_from=label_path)
+            if self.downsampling_factor > 1:
+                anno = anno.resize(1/self.downsampling_factor)
+            self.current_annotation = anno
+
+        else:
+            self.current_annotation = Annotation()
+
+        self.changes_made = False
         anno, img = self.get_annotation(img)
 
-        if len(anno) > 0:
+        if len(anno) > 0 and self.changes_made:
             if self.downsampling_factor > 1:
                 # set annotation to the scale of the original, non-resized image
-                anno = anno.resize(1/self.downsampling_factor)
-
-            anno.save(os.path.join(self.label_dir, label_name))
+                anno = anno.resize(self.downsampling_factor)
+            anno.save(label_path)
+        else:
+            print('No changes made to this annotation.')
 
     def load_image(self, filepath):
         """loads an image from filepath and downsamples it to fit inside self.max_dims"""
@@ -254,7 +285,7 @@ class AnnotationSession(object):
     def get_annotation(self, img):
         # Set up data to send to mouse handler
         self.data = {'img': img.copy()}
-        
+
         # Set the callback function for any mouse eventr
         cv2.imshow("Image", img)
         cv2.setMouseCallback("Image", self.mouse_handler, self.data)
@@ -263,17 +294,15 @@ class AnnotationSession(object):
 
         anno = copy.deepcopy(self.current_annotation)
         # del self.current_annotation
-        
+
         return anno, self.data['img']
 
     def wait_for_key(self):
         done = False
-        
 
-        
         while not done:
             key = chr(cv2.waitKey(0))
-            
+
             if key == 'n':
                 done = True
             elif key == 'q':
@@ -283,8 +312,8 @@ class AnnotationSession(object):
                 box_id = self.current_annotation.which_bbox(x,y)
                 if box_id is not None:
                     self.current_annotation[box_id].name = self.class_shortcuts[key]
-                    
-        
+
+
     def mouse_handler(self, event, x, y, flags, data):
         image = data['img'].copy()
 
@@ -308,6 +337,7 @@ class AnnotationSession(object):
                     # and save:
                     self.current_annotation.append(bbox)
                     print(self.current_annotation)
+                    self.changes_made = True
 
         elif event == cv2.EVENT_MOUSEMOVE and self.btn_down:
             # visualise the box-in-progress as we draw it
@@ -336,17 +366,19 @@ class AnnotationSession(object):
             box_idx = self.current_annotation.which_bbox(x, y)
             if box_idx is not None:
                 self.current_annotation[box_idx].cycle_class()
+                self.changes_made = True
 
         elif event == cv2.EVENT_RBUTTONDOWN:
             # delete the selected box
             box_idx = self.current_annotation.which_bbox(x, y)
             if box_idx is not None:
                 del self.current_annotation.bboxes[box_idx]
-                
+                self.changes_made = True
+
         elif event == cv2.EVENT_MOUSEMOVE:
             # just store the current mouse position so we can link in keyboard commands
             self.current_mouse_position = x,y
-        
+
         #else: # no change; so don't waste computation time redrawing the image
         #    redraw = False
 
@@ -361,6 +393,6 @@ class AnnotationSession(object):
             self.process_image(img_path)
 
 
-sess = AnnotationSession(image_dir='images', label_dir='labels')
+sess = AnnotationSession(image_dir='../datagen/data/images/', label_dir='../datagen/data/labels/')
 sess.process_queue()
 cv2.destroyAllWindows()
