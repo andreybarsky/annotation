@@ -5,6 +5,7 @@ import cv2
 import os
 import sys
 import copy
+import argparse
 
 class BoundingBox(object):
     """bounding boxes for 2d images with /4-DoF and a class label"""
@@ -207,12 +208,17 @@ class AnnotationSession(object):
        'l': 'Load'}
 
 
-    def __init__(self, image_dir, label_dir, max_dims=[800,600]):
+    def __init__(self, image_dir, label_dir, max_dims=[800,600], start_from=0):
         """accepts a list of filepaths to images for annotating, and begins a session to annotate them"""
         self.image_dir = image_dir
         self.label_dir = label_dir
 
-        self.image_queue = [os.path.join(image_dir, filename) for filename in os.listdir(image_dir)]
+        image_queue = sorted([os.path.join(image_dir, filename) for filename in os.listdir(image_dir)])
+        if start_from > 0: # start at a pre-determined index but loop back again
+            self.image_queue = image_queue[start_from:] + image_queue[:start_from]
+        else:
+            self.image_queue = image_queue
+
         self.max_dims = max_dims
 
         self.btn_down = False
@@ -393,6 +399,10 @@ class AnnotationSession(object):
             self.process_image(img_path)
 
 
-sess = AnnotationSession(image_dir='../datagen/data/images/', label_dir='../datagen/data/labels/')
+parser = argparse.ArgumentParser()
+parser.add_argument('-f', help='File number to start from', type=int, default=0)
+args = parser.parse_args()
+
+sess = AnnotationSession(image_dir='../datagen/data/images/', label_dir='../datagen/data/labels/', start_from=args.f)
 sess.process_queue()
 cv2.destroyAllWindows()
