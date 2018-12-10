@@ -16,7 +16,7 @@ names_colours =[('PalletBody', (255, 255, 255)),
         ('Truck',      (255, 255, 0  )),
         ('Racking',    (0,   255, 255))]
 
-# and optionally add a shortcut key for them:
+# and optionally add a shortcut key for them: (but 'n' and 'q' are reserved)
 class_shortcuts = {'b': 'Bay',
                    'f': 'PalletFace',
                    'p': 'Pedestrian',
