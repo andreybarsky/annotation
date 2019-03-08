@@ -414,7 +414,7 @@ class AnnotationSession(object):
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--from', '-f', help='File number to start from', type=int, default=0)
+parser.add_argument('--start_from', '-f', help='File number to start from', type=int, default=0)
 parser.add_argument('--dir', '-d', help='Root directory of images/labels subdirectories', type=str, required=True) 
 args = parser.parse_args()
 
@@ -422,6 +422,6 @@ root_dir = args.dir
 image_dir = os.path.join(root_dir, 'images')
 label_dir = os.path.join(root_dir, 'labels')
 
-sess = AnnotationSession(image_dir=image_dir, label_dir=label_dir, start_from=args.f)
+sess = AnnotationSession(image_dir=image_dir, label_dir=label_dir, start_from=args.start_from)
 sess.process_queue()
 cv2.destroyAllWindows()
