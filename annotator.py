@@ -207,18 +207,6 @@ class Annotation(object):
             bboxes.append(bbox)
         return bboxes
 
-            # text = file.read()
-        # lines = text.splitlines()
-        #
-        # bboxes = []
-        # for line in lines:
-        #     vals = line.split(' ')
-        #     class_name = vals[0]
-        #     rest_vals = [int(float(val)) for val in vals[1:]]
-        #     xmin, ymin, xmax, ymax = rest_vals[3:7]
-        #     bbox = BoundingBox(class_name, xmin, xmax, ymin, ymax)
-        #     bboxes.append(bbox)
-        # return bboxes
 
 class AnnotationSession(object):
     """interactive user session within which we annotate multiple files"""
@@ -321,7 +309,6 @@ class AnnotationSession(object):
             self.downsampling_factor = max(x_ratio, y_ratio)
             # more cv2 dimension reversal:
             self.new_dims = int(self.original_dims[0] / self.downsampling_factor), int(self.original_dims[1] / self.downsampling_factor)
-            # self.new_dims = [int(d / self.downsampling_factor) for d in self.original_dims]
             # print(f'Original dims: {self.original_dims}')
             # print(f'Downsampling factor: {self.downsampling_factor:.2}')
             # print(f'New dims: {self.new_dims}')
@@ -338,10 +325,8 @@ class AnnotationSession(object):
 
         # set the callback function for any mouse event
 
-        # img=cv2.resize(img, tuple(self.new_dims))
         cv2.imshow("Image", img)
         cv2.setMouseCallback("Image", self.mouse_handler, self.data)
-        #cv2.waitKey(0)
         signal = self.wait_for_boxes()
 
         anno = copy.deepcopy(self.current_annotation)
@@ -504,31 +489,13 @@ class AnnotationSession(object):
                 i += 1
 
 
-import pdb
 if __name__ == '__main__':
 
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument('--start_from', '-f', help='File number to start from', type=int, default=0)
-    # parser.add_argument('--img_dir', '-i', help='Directory of image files to annotate', type=str, required=True)
-    # parser.add_argument('--label_dir', '-l', help='Directory of where to store labels', type=str, required=False)
-    # args = parser.parse_args()
-    #
-    # if args.label_dir is None:
-    #     # default label dir is just inside the image directory:
-    #     label_dir = os.path.join(args.img_dir, 'labels')
-    # else:
-    #     label_dir = args.label_dir
     if not os.path.exists(config.label_dir):
         print(f'Creating label directory: {config.label_dir}')
         os.mkdir(config.label_dir)
 
-    # try:
     sess = AnnotationSession(image_dir=config.image_dir, label_dir=config.label_dir)
     sess.process_queue()
-    # except Exception as e:
-        # print(f'Error: {e}')
-        # print(f'Shutting down annotation session')
-        # cv2.destroyAllWindows()
-        # pdb.set_trace()
 
     cv2.destroyAllWindows()
