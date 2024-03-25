@@ -1,8 +1,8 @@
 
 
 # set the local directories of where images and annotations are to be stored:
-image_dir = '/home/andrey/data/annotation_sets/images'
-label_dir = '/home/andrey/data/annotation_sets/boxes'
+image_dir = '/home/abarsky/data/annotation_sets/imgs'
+label_dir = '/home/abarsky/data/annotation_sets/boxes'
 
 
 # set the numeric units in which annotations are saved:

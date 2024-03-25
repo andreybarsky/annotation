@@ -302,17 +302,23 @@ class AnnotationSession(object):
 
     def process_image(self, img_path):
         """Loads, resizes, and prompts for annotation of a single example"""
+
+        # take everything after the final slash:
         img_name = img_path.split(os.sep)[-1]
         print(f'Img_name: {img_name}')
-        img_name_noext = img_name.split('.')[0]
-        label_name = f'{img_name_noext}.txt'
+
+        # strip file extension from image name: (i.e. take everything before the final period)
+        img_name_noext = '.'.join(img_name.split('.')[:-1])
+
+
+        label_name = f'{img_name_noext}.npy'
         print(f'Label name: {label_name}')
 
         img = self.load_image(img_path)
 
         label_path = os.path.join(self.label_dir, label_name)
         if os.path.exists(label_path):
-            print('Loading existing annotation from: %s' % label_path)
+            print(f'Loading existing annotation from: {label_path}')
             anno = Annotation(load_from=label_path)
             if self.downsampling_factor > 1:
                 anno = anno.resize(1/self.downsampling_factor)
@@ -333,9 +339,10 @@ class AnnotationSession(object):
             print('No changes made to this annotation.')
 
     def load_image(self, filepath):
-        """loads an image from filepath and downsamples it to fit inside self.max_dims"""
+        """loads an image from filepath and downsamples it to fit inside self.max_dims.
+        outputs cv2 image object."""
         img = cv2.imread(filepath, 1)
-        # note that cv2 reads x and y dimensions in the opposite order from what is usual:
+        # cv2's dimensions are height,width in that order, even though in some places we use x,y:
         self.original_dims = list(reversed(img.shape[:2]))
         x_ratio, y_ratio = self.original_dims[0] / self.max_dims[0], self.original_dims[1] / self.max_dims[1]
 
@@ -370,6 +377,8 @@ class AnnotationSession(object):
         return anno, self.data['img']
 
     def wait_for_boxes(self):
+        # main loop that allows the user to draw boxes,
+        # also responds to keypresses etc.
         done = False
 
         while not done:
@@ -481,6 +490,7 @@ class AnnotationSession(object):
         if redraw:
             self.current_annotation.draw(image)
             cv2.imshow("Image", image)
+            # self.data['img'] = image
 
     def delete_box_at(self, x, y):
         """deletes the box located at mouse coordinates x and y"""
