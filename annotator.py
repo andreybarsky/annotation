@@ -212,7 +212,7 @@ class AnnotationSession(object):
     """interactive user session within which we annotate multiple files"""
 
     def __init__(self, image_dir, label_dir, max_display_size=config.max_display_size,
-                       start_from=0, classes=False, image_names=None):
+                       start_from=0, classes=False, image_names=None, label_names=None):
         """accepts a list of filepaths to images for annotating, and begins a session to annotate them.
         if image_names are given, loop through only those images in the target directory."""
         self.image_dir = image_dir
@@ -222,7 +222,15 @@ class AnnotationSession(object):
             image_names = os.listdir(image_dir)
         # otherwise, assume image_names is a list of filename strings (without leading directories)
 
-        image_queue = sorted([os.path.join(image_dir, filename) for filename in image_names if filename != 'labels'])
+        if label_names is None:
+            # by default, label names are just the same as image names with the file extension stripped:
+            self.image_labels = {imname: '.'.join(imname.split('.')[:-1]) for imname in image_names}
+            # but they can be provided manually instead, for e.g. image-question pairs
+        else:
+            assert len(image_names) == len(label_names)
+            self.image_labels = {image_names[i]: label_names[i] for i in range(len(image_names))}
+
+        image_queue = [os.path.join(image_dir, filename) for filename in image_names if filename != 'labels']
         if start_from > 0: # start at a pre-determined index but loop back again
             self.image_queue = image_queue[start_from:] + image_queue[:start_from]
         else:
@@ -254,7 +262,7 @@ class AnnotationSession(object):
                     print(f'   {v}: {k}')
 
 
-    def process_image(self, img_path):
+    def process_image(self, img_path, label_path=None):
         """Loads, resizes, and prompts for annotation of a single example"""
 
         # take everything after the final slash:
@@ -475,10 +483,12 @@ class AnnotationSession(object):
             img_path = self.image_queue[i]
             img_name = img_path.split('/')[-1]
             self.current_image_name = img_name
+
+            label_name = self.label_
             print(f'Loading image: {img_name}')
             print(f'  (#{i+1} of {len(self.image_queue)} in queue)')
 
-            signal = self.process_image(img_path)
+            signal = self.process_image(img_path, label_name)
             if signal == 'quit':
                 break
             elif signal == 'prev':

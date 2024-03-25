@@ -1,9 +1,9 @@
 
 
 # set the local directories of where images and annotations are to be stored:
+json_dir =  '/home/abarsky/data/annotation_sets'
 image_dir = '/home/abarsky/data/annotation_sets/imgs'
 label_dir = '/home/abarsky/data/annotation_sets/boxes'
-
 
 # set the numeric units in which annotations are saved:
 fractional_bounding_boxes = True
