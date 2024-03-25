@@ -7,45 +7,60 @@ import sys
 import copy
 import argparse
 
-# to introduce new classes: add them here with a colour to identify them
-names_colours =[('PalletBody', (255, 255, 255)),
-        ('PalletFace', (0,   255, 0  )),
-        ('Pedestrian', (0,   0,   255)),
-        ('Bay',        (255, 0,   255)),
-        ('Load',       (255, 0,   0  )),
-        ('Truck',      (255, 255, 0  )),
-        ('Racking',    (0,   255, 255))]
-
-# and optionally add a shortcut key for them: (but 'n' and 'q' are reserved)
-class_shortcuts = {'b': 'Bay',
-                   'f': 'PalletFace',
-                   'p': 'Pedestrian',
-                   'r': 'Racking',
-                   't': 'Truck',
-                   'l': 'Load'}
+import config
 
 
-class BoundingBox(object):
-    """bounding boxes for 2d images with /4-DoF and a class label"""
+class GenericBoundingBox:
+    """bounding boxes for 2d images with 4-DoF """
 
-    # to introduce new classes: add them here with a colour to identify them
-    names_colours =[('PalletBody', (255, 255, 255)),
-                    ('PalletFace', (0,   255, 0  )),
-                    ('Pedestrian', (0,   0,   255)),
-                    ('Bay',        (255, 0,   255)),
-                    ('Load',       (255, 0,   0  )),
-                    ('Truck',      (255, 255, 0  )),
-                    ('Racking',    (0,   255, 255))]
+    # default colour of generic bounding boxes is set in config file:
+    colour = config.default_colour
 
-    # set up mappings from class numbers to class names and vice versa:
-    num2name = [name for name, colour in names_colours]
+    def __init__(self, xmin, xmax, ymin, ymax):
+        """initialised with bounding box extent values (in pixel units)"""
+        self.xmin = xmin
+        self.xmax = xmax
+        self.ymin = ymin
+        self.ymax = ymax
+
+        self.params = xmin, xmax, ymin, ymax
+
+    @property
+    def bounds(self):
+        return self.xmin, self.xmax, self.ymin, self.ymax
+
+
+    def draw(self, image):
+        """takes an image, returns it with this bbox drawn on it"""
+
+        # first, convert fractional bbox bounds to pixel coordinates:
+        height, width = image.shape[:2]
+
+        xmin, xmax, ymin, ymax = int(self.xmin), int(self.xmax), int(self.ymin), int(self.ymax)
+        cv2.rectangle(image, (xmin, ymin), (xmax, ymax), self.colour[::-1], 2)
+        return image
+
+    def resize(self, factor):
+        """resizes x and y dimensions of bounds by scalar multiplication"""
+        new_bbox = self.__class__(*self.params)
+        new_bbox.xmin = self.xmin * factor
+        new_bbox.xmax = self.xmax * factor
+        new_bbox.ymin = self.ymin * factor
+        new_bbox.ymax = self.ymax * factor
+        return new_bbox
+
+    def __repr__(self):
+        return f"<Bbox: x: {self.xmin}-{self.xmax}; y: {self.ymin}-{self.ymax}>"
+
+class ClassBoundingBox(GenericBoundingBox):
+    # set up mappings from class numbers to class names etc.
+    num_classes = len(config.defined_classes)
+    num2name = [name for name, colour in config.defined_classes.items()]
     name2num = {name:num for num, name in enumerate(num2name)}
-    num_classes = len(num2name)
+    num2colour = [colour for name, colour in config.defined_classes.items()]
 
-    num2colour = [colour for name, colour in names_colours]
-
-    def __init__(self, class_id, xmin, xmax, ymin, ymax):
-        """first argument can be the name or number of the desired class"""
+    """bounding box with a class label"""
+    def __init__(self, xmin, xmax, ymin, ymax, class_id):
         if type(class_id) == int:
             self.class_num = class_id
             # self.class_name = self.num2name[class_id]
@@ -53,18 +68,13 @@ class BoundingBox(object):
             # self.class_name = class_id
             self.class_num = self.name2num[class_id]
         else:
-            raise TypeError('First argument to BoundingBox must be class name or number')
+            raise TypeError('Final argument to BoundingBox must be class name or number')
 
-        #self.colour = self.num2colour[self.class_num]
-
-        self.xmin = xmin
-        self.xmax = xmax
-        self.ymin = ymin
-        self.ymax = ymax
+        super().__init__(self, xmin, xmax, ymin, ymax)
 
     @property
-    def bounds(self):
-        return self.xmin, self.xmax, self.ymin, self.ymax
+    def params(self):
+        return self.xmin, self.xmax, self.ymin, self.ymax, self.class_num
 
     @property
     def colour(self):
@@ -87,23 +97,16 @@ class BoundingBox(object):
         return self.num2name[self.class_num]
 
     def __repr__(self):
-        return f"{self.name}: x: {self.xmin}-{self.xmax}; y: {self.ymin}-{self.ymax}"
-
-    def resize(self, factor):
-        """resizes x and y dimensions of bounds by scalar multiplication"""
-        new_bbox = BoundingBox(self.class_num, 0, 0, 0, 0)
-        new_bbox.xmin = self.xmin * factor
-        new_bbox.xmax = self.xmax * factor
-        new_bbox.ymin = self.ymin * factor
-        new_bbox.ymax = self.ymax * factor
-        return new_bbox
+        return f"<{self.name}: x: {self.xmin}-{self.xmax}; y: {self.ymin}-{self.ymax}>"
 
     def draw(self, image):
         """takes an image, returns it with this bbox drawn on it"""
-        xmin, xmax, ymin, ymax = int(self.xmin), int(self.xmax), int(self.ymin), int(self.ymax)
-        cv2.rectangle(image, (xmin, ymin), (xmax, ymax), self.colour, 2)
+        # draw bbox as with generic bbox:
+        image = super().draw(self, image)
+        # but then staple the class name on top as well:
         cv2.putText(image, self.name, (xmin, ymin-10), cv2.FONT_HERSHEY_SIMPLEX, fontScale=1, color=self.colour)
         return image
+
 
 
 class Annotation(object):
@@ -124,7 +127,7 @@ class Annotation(object):
         return reversed(self.bboxes)
 
     def append(self, bbox):
-        if isinstance(bbox, BoundingBox):
+        if isinstance(bbox, (GenericBoundingBox, ClassBoundingBox)):
             self.bboxes.append(bbox)
         else:
             raise TypeError('Argument for Annotation.append must be a BoundingBox object')
@@ -136,42 +139,62 @@ class Annotation(object):
             new_anno.append(bbox.resize(factor))
         return new_anno
 
-    def to_kitti(self):
-        """takes a list of bboxes and outputs string in KITTI format"""
-        """KITTI label file documentation:
-        #Values    Name      Description
-        ----------------------------------------------------------------------------
-           1    type         Describes the type of object: 'Car', 'Van', 'Truck',
-                             'Pedestrian', 'Person_sitting', 'Cyclist', 'Tram',
-                             'Misc' or 'DontCare'
-           1    truncated    Float from 0 (non-truncated) to 1 (truncated), where
-                             truncated refers to the object leaving image boundaries
-           1    occluded     Integer (0,1,2,3) indicating occlusion state:
-                             0 = fully visible, 1 = partly occluded
-                             2 = largely occluded, 3 = unknown
-           1    alpha        Observation angle of object, ranging [-pi..pi]
-           4    bbox         2D bounding box of object in the image (0-based index):
-                             contains left, top, right, bottom pixel coordinates
-           3    dimensions   3D object dimensions: height, width, length (in meters)
-           3    location     3D object location x,y,z in camera coordinates (in meters)
-           1    rotation_y   Rotation ry around Y-axis in camera coordinates [-pi..pi]
-           1    score        Only for results: Float, indicating confidence in
-                             detection, needed for p/r curves, higher is better.
-        """
-        rows = []
-        for bbox in self:
-            l, r, t, b = bbox.bounds
-            row_vals = [0, 0, 0, l, t, r, b, 0, 0, 0, 0] # we don't care about the other values for now
-            row_vals = [str(v) for v in row_vals]
-            row = [bbox.name] + row_vals
-            row_str = ' '.join(row)
-            rows.append(row_str)
-        kitti_str = '\n'.join(rows)
-        return kitti_str
+    def to_array(self, as_fraction=True, img_dims=None):
+        """outputs the bounding boxes associated with this annotation
+            as a numpy array of shape (num_boxes, 4).
+        values are in pixel units if as_fraction is False, or in range 0-1 if True.
+            but if True, we require img_dims to be provided (as h,w) for the rescaling."""
+
+        arr = np.asarray(self.bboxes)
+        # if as_fraction:
+        #     assert img_dims is not None, "img_dims must be provided for fractional rescaling"
+        #     assert len(img_dims) == 2, "expected img_dims as integer tuple (height, width) in pixels"
+        #     h, w = [int(v) for v in img_dims]
+        #     xmin, xmax = arr[:,0] / w, arr[:,1] / w
+        #     ymin, ymax = arr[:,2] / h, arr[:,3] / h
+        #     arr = np.stack([xmin, xmax, ymin, ymax], axis=1)
+
+        return arr
+
+    #
+    # def to_kitti(self):
+    #     """takes a list of bboxes and outputs string in KITTI format"""
+    #     """KITTI label file documentation:
+    #     #Values    Name      Description
+    #     ----------------------------------------------------------------------------
+    #        1    type         Describes the type of object: 'Car', 'Van', 'Truck',
+    #                          'Pedestrian', 'Person_sitting', 'Cyclist', 'Tram',
+    #                          'Misc' or 'DontCare'
+    #        1    truncated    Float from 0 (non-truncated) to 1 (truncated), where
+    #                          truncated refers to the object leaving image boundaries
+    #        1    occluded     Integer (0,1,2,3) indicating occlusion state:
+    #                          0 = fully visible, 1 = partly occluded
+    #                          2 = largely occluded, 3 = unknown
+    #        1    alpha        Observation angle of object, ranging [-pi..pi]
+    #        4    bbox         2D bounding box of object in the image (0-based index):
+    #                          contains left, top, right, bottom pixel coordinates
+    #        3    dimensions   3D object dimensions: height, width, length (in meters)
+    #        3    location     3D object location x,y,z in camera coordinates (in meters)
+    #        1    rotation_y   Rotation ry around Y-axis in camera coordinates [-pi..pi]
+    #        1    score        Only for results: Float, indicating confidence in
+    #                          detection, needed for p/r curves, higher is better.
+    #     """
+    #     rows = []
+    #     for bbox in self:
+    #         l, r, t, b = bbox.bounds
+    #         row_vals = [0, 0, 0, l, t, r, b, 0, 0, 0, 0] # we don't care about the other values for now
+    #         row_vals = [str(v) for v in row_vals]
+    #         row = [bbox.name] + row_vals
+    #         row_str = ' '.join(row)
+    #         rows.append(row_str)
+    #     kitti_str = '\n'.join(rows)
+    #     return kitti_str
 
     def which_bbox(self, x, y):
         """given a click location, return the index of the bounding box that the
         click was in, from newest first"""
+        ### this is a very inefficient collision detection algorithm
+        ### but it should be ok as we don't expect hundreds of bboxes per image
         for idx, bbox in enumerate(reversed(self)): # reversed so we process oldest boxes last
             xmin, xmax, ymin, ymax = bbox.bounds
             if xmin < x < xmax:
@@ -184,9 +207,10 @@ class Annotation(object):
             print(f'Overwriting label at: {filepath}')
         else:
             print(f'Saving new label: {filepath}')
-        with open(filepath, 'w') as file:
-            kitti_str = self.to_kitti()
-            file.write(kitti_str)
+        # with open(filepath, 'w') as file:
+        bbox_arr = self.to_array()
+        np.save(filepath, bbox_arr)
+            # file.write(kitti_str)
 
     def draw(self, image):
         """takes an image, returns it with every bbox drawn on it"""
@@ -202,51 +226,79 @@ class Annotation(object):
         return '\n'.join(replines)
 
     def load_bboxes_from_file(self, filename):
-        with open(filename, 'r') as file:
-            text = file.read()
-        lines = text.splitlines()
-
+        """load bounding boxes from a numpy array and append to this annotation"""
+        # with open(filename, 'r') as file:
+        arr = np.load(filename)
         bboxes = []
-        for line in lines:
-            vals = line.split(' ')
-            class_name = vals[0]
-            rest_vals = [int(float(val)) for val in vals[1:]]
-            xmin, ymin, xmax, ymax = rest_vals[3:7]
-            bbox = BoundingBox(class_name, xmin, xmax, ymin, ymax)
+        for row in arr:
+            if len(row) == 4:
+                # generic / classless bounding box
+                xmin, xmax, ymin, ymax = row
+                bbox = GenericBoundingBox(xmin, xmax, ymin, ymax)
+            elif len(row) == 5:
+                # classful bounding box
+                xmin, xmax, ymin, ymax, class_num = row
+                bbox = ClassBoundingBox(xmin, xmax, ymin, ymax, class_num)
             bboxes.append(bbox)
         return bboxes
 
+            # text = file.read()
+        # lines = text.splitlines()
+        #
+        # bboxes = []
+        # for line in lines:
+        #     vals = line.split(' ')
+        #     class_name = vals[0]
+        #     rest_vals = [int(float(val)) for val in vals[1:]]
+        #     xmin, ymin, xmax, ymax = rest_vals[3:7]
+        #     bbox = BoundingBox(class_name, xmin, xmax, ymin, ymax)
+        #     bboxes.append(bbox)
+        # return bboxes
+
 class AnnotationSession(object):
+    """interactive user session within which we annotate multiple files"""
 
-
-
-
-    def __init__(self, image_dir, label_dir, max_dims=[800,600], start_from=0):
-        """accepts a list of filepaths to images for annotating, and begins a session to annotate them"""
+    def __init__(self, image_dir, label_dir, max_display_size=[800,600], start_from=0, classes=False, image_names=None):
+        """accepts a list of filepaths to images for annotating, and begins a session to annotate them.
+        if image_names are given, loop through only those images in the target directory."""
         self.image_dir = image_dir
         self.label_dir = label_dir
 
-        image_queue = sorted([os.path.join(image_dir, filename) for filename in os.listdir(image_dir)])
+        if image_names is None:
+            image_names = os.listdir(image_dir)
+        # otherwise, assume image_names is a list of filename strings (without leading directories)
+
+        image_queue = sorted([os.path.join(image_dir, filename) for filename in image_names if filename != 'labels'])
         if start_from > 0: # start at a pre-determined index but loop back again
             self.image_queue = image_queue[start_from:] + image_queue[:start_from]
         else:
             self.image_queue = image_queue
+        self.current_image_name = None
 
-        self.max_dims = max_dims
+        self.max_dims = max_display_size
 
         self.btn_down = False
         self.current_bbox = None
 
         self.current_mouse_position = (0,0)
+        self.use_classes = classes
 
     def help_message(self):
-        """Print user instructions to console"""
-        print("""  Annotation session started.
-  Press 'n' for next image, and 'q' to quit.
+        # prints user instructions to console
 
-  Class shortcuts:""")
-        for k,v in class_shortcuts.items():
-            print(f'   {v}: {k}')
+        print('Annotation session started.')
+        print("Left click and drag to draw bounding boxes. Right click a box, or hover and press 'd', to delete it.")
+        print("Press 'n' for next image, and 'q' to quit.")
+        print(f'Progress is saved after each image.')
+
+        if self.use_classes:
+            print(f'\nUsing classes: {list(config.defined_classes.keys())}')
+            print(f'  Middle click on a box to cycle through class labels.')
+            if len(config.class_shortcuts) > 0:
+                print('  Or use keyboard shortcuts:')
+                for k,v in config.class_shortcuts.items():
+                    print(f'   {v}: {k}')
+
 
     def process_image(self, img_path):
         """Loads, resizes, and prompts for annotation of a single example"""
@@ -299,42 +351,59 @@ class AnnotationSession(object):
         else:
             self.downsampling_factor = 1 # no downsampling
 
+        # self.current_image = img
         return img
 
     def get_annotation(self, img):
-        # Set up data to send to mouse handler
+        # set up data to send to mouse handler
         self.data = {'img': img.copy()}
 
-        # Set the callback function for any mouse eventr
+        # set the callback function for any mouse event
         cv2.imshow("Image", img)
         cv2.setMouseCallback("Image", self.mouse_handler, self.data)
         #cv2.waitKey(0)
-        self.wait_for_key()
+        self.wait_for_boxes()
 
         anno = copy.deepcopy(self.current_annotation)
         # del self.current_annotation
 
         return anno, self.data['img']
 
-    def wait_for_key(self):
+    def wait_for_boxes(self):
         done = False
 
         while not done:
             key = chr(cv2.waitKey(0))
 
             if key == 'n':
+                # finish this image and pass to the next
                 done = True
             elif key == 'q':
+                print(f'Quitting annotation session...')
+                cv2.destroyAllWindows()
                 sys.exit()
-            elif key in class_shortcuts:
+            elif key == 'd':
+                # delete the box at the current mouse position
+                image = self.data['img'].copy()
+                x,y = self.current_mouse_position
+                self.delete_box_at(x,y)
+                self.changes_made = True
+                # redraw:
+                self.current_annotation.draw(image)
+                cv2.imshow("Image", image)
+                self.data['img'] = image
+
+            elif key in config.class_shortcuts:
                 x,y = self.current_mouse_position
                 box_id = self.current_annotation.which_bbox(x,y)
                 if box_id is not None:
-                    self.current_annotation[box_id].name = class_shortcuts[key]
+                    self.current_annotation[box_id].name = config.class_shortcuts[key]
+            else:
+                print(f'Detected keypress: {key}, but no behaviour defined')
 
 
     def mouse_handler(self, event, x, y, flags, data):
-        image = data['img'].copy()
+        image = self.data['img'].copy()
 
         redraw = True
         if event == cv2.EVENT_LBUTTONUP and self.btn_down:
@@ -352,7 +421,10 @@ class AnnotationSession(object):
             obj_class = 0
             if xmax-xmin > 5: # protect against stray clicks by enforcing minimum box size
                 if ymax-ymin > 5:
-                    bbox = BoundingBox(obj_class, xmin, xmax, ymin, ymax)
+                    if not self.use_classes:
+                        bbox = GenericBoundingBox(xmin, xmax, ymin, ymax)
+                    else:
+                        bbox = ClassBoundingBox(xmin, xmax, ymin, ymax, obj_class)
                     # and save:
                     self.current_annotation.append(bbox)
                     print(self.current_annotation)
@@ -367,11 +439,13 @@ class AnnotationSession(object):
             ymin = min(y1, y2)
             ymax = max(y1, y2)
 
-            cv2.circle(image, (xmin, ymin), 2, (255,)*3, 5, 16)
-            cv2.circle(image, (xmin, ymax), 2, (255,)*3, 5, 16)
-            cv2.circle(image, (xmax, ymin), 2, (255,)*3, 5, 16)
-            cv2.circle(image, (xmax, ymax), 2, (255,)*3, 5, 16)
-            cv2.rectangle(image, data['pt1'], (x, y), (255,)*3, 1)
+            clr = config.default_colour[::-1] # reversed because CV2 uses BGR not RGB
+
+            cv2.circle(image, (xmin, ymin), 2, clr, 5, 16)
+            cv2.circle(image, (xmin, ymax), 2, clr, 5, 16)
+            cv2.circle(image, (xmax, ymin), 2, clr, 5, 16)
+            cv2.circle(image, (xmax, ymax), 2, clr, 5, 16)
+            cv2.rectangle(image, data['pt1'], (x, y), clr, 1)
 
         elif event == cv2.EVENT_LBUTTONDOWN:
             # start a new box
@@ -389,10 +463,12 @@ class AnnotationSession(object):
 
         elif event == cv2.EVENT_RBUTTONDOWN:
             # delete the selected box
-            box_idx = self.current_annotation.which_bbox(x, y)
-            if box_idx is not None:
-                del self.current_annotation.bboxes[box_idx]
-                self.changes_made = True
+            self.delete_box_at(x,y)
+            self.changes_made = True
+            # box_idx = self.current_annotation.which_bbox(x, y)
+            # if box_idx is not None:
+            #     del self.current_annotation.bboxes[box_idx]
+            #     self.changes_made = True
 
         elif event == cv2.EVENT_MOUSEMOVE:
             # just store the current mouse position so we can link in keyboard commands
@@ -406,22 +482,45 @@ class AnnotationSession(object):
             self.current_annotation.draw(image)
             cv2.imshow("Image", image)
 
+    def delete_box_at(self, x, y):
+        """deletes the box located at mouse coordinates x and y"""
+        box_idx = self.current_annotation.which_bbox(x, y)
+        if box_idx is not None:
+            del self.current_annotation.bboxes[box_idx]
+            self.changes_made = True
+
     def process_queue(self):
         self.help_message()
         for img_path in self.image_queue:
+            img_name = img_path.split('/')[-1]
+            self.current_image_name = img_name
+
             self.process_image(img_path)
 
 
+if __name__ == '__main__':
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--start_from', '-f', help='File number to start from', type=int, default=0)
-parser.add_argument('--dir', '-d', help='Root directory of images/labels subdirectories', type=str, required=True) 
-args = parser.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--start_from', '-f', help='File number to start from', type=int, default=0)
+    parser.add_argument('--img_dir', '-i', help='Directory of image files to annotate', type=str, required=True)
+    parser.add_argument('--label_dir', '-l', help='Directory of where to store labels', type=str, required=False)
+    args = parser.parse_args()
 
-root_dir = args.dir
-image_dir = os.path.join(root_dir, 'images')
-label_dir = os.path.join(root_dir, 'labels')
+    if args.label_dir is None:
+        # default label dir is just inside the image directory:
+        label_dir = os.path.join(args.img_dir, 'labels')
+    else:
+        label_dir = args.label_dir
+    if not os.path.exists(label_dir):
+        print(f'Creating label directory: {label_dir}')
+        os.mkdir(label_dir)
 
-sess = AnnotationSession(image_dir=image_dir, label_dir=label_dir, start_from=args.start_from)
-sess.process_queue()
-cv2.destroyAllWindows()
+    try:
+        sess = AnnotationSession(image_dir=args.img_dir, label_dir=label_dir, start_from=args.start_from)
+        sess.process_queue()
+    except Exception as e:
+        print(f'Error: {e}')
+        print(f'Shutting down annotation session')
+        cv2.destroyAllWindows()
+
+    cv2.destroyAllWindows()
