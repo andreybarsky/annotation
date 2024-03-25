@@ -1,5 +1,3 @@
-#!/usr/bin/python3.6
-
 import numpy as np
 import cv2
 import os
@@ -28,7 +26,6 @@ class GenericBoundingBox:
     @property
     def bounds(self):
         return self.xmin, self.xmax, self.ymin, self.ymax
-
 
     def draw(self, image):
         """takes an image, returns it with this bbox drawn on it"""
@@ -97,7 +94,7 @@ class ClassBoundingBox(GenericBoundingBox):
         return self.num2name[self.class_num]
 
     def __repr__(self):
-        return f"<{self.name}: x: {self.xmin}-{self.xmax}; y: {self.ymin}-{self.ymax}>"
+        return f"<{self.name}: x: {self.xmin:.3}-{self.xmax:.3}; y: {self.ymin:.3}-{self.ymax:.3}>"
 
     def draw(self, image):
         """takes an image, returns it with this bbox drawn on it"""
@@ -145,7 +142,8 @@ class Annotation(object):
         values are in pixel units if as_fraction is False, or in range 0-1 if True.
             but if True, we require img_dims to be provided (as h,w) for the rescaling."""
 
-        arr = np.asarray(self.bboxes)
+        bounds_list = [bbox.bounds for bbox in self.bboxes]
+        arr = np.asarray(bounds_list)
         # if as_fraction:
         #     assert img_dims is not None, "img_dims must be provided for fractional rescaling"
         #     assert len(img_dims) == 2, "expected img_dims as integer tuple (height, width) in pixels"
@@ -156,39 +154,6 @@ class Annotation(object):
 
         return arr
 
-    #
-    # def to_kitti(self):
-    #     """takes a list of bboxes and outputs string in KITTI format"""
-    #     """KITTI label file documentation:
-    #     #Values    Name      Description
-    #     ----------------------------------------------------------------------------
-    #        1    type         Describes the type of object: 'Car', 'Van', 'Truck',
-    #                          'Pedestrian', 'Person_sitting', 'Cyclist', 'Tram',
-    #                          'Misc' or 'DontCare'
-    #        1    truncated    Float from 0 (non-truncated) to 1 (truncated), where
-    #                          truncated refers to the object leaving image boundaries
-    #        1    occluded     Integer (0,1,2,3) indicating occlusion state:
-    #                          0 = fully visible, 1 = partly occluded
-    #                          2 = largely occluded, 3 = unknown
-    #        1    alpha        Observation angle of object, ranging [-pi..pi]
-    #        4    bbox         2D bounding box of object in the image (0-based index):
-    #                          contains left, top, right, bottom pixel coordinates
-    #        3    dimensions   3D object dimensions: height, width, length (in meters)
-    #        3    location     3D object location x,y,z in camera coordinates (in meters)
-    #        1    rotation_y   Rotation ry around Y-axis in camera coordinates [-pi..pi]
-    #        1    score        Only for results: Float, indicating confidence in
-    #                          detection, needed for p/r curves, higher is better.
-    #     """
-    #     rows = []
-    #     for bbox in self:
-    #         l, r, t, b = bbox.bounds
-    #         row_vals = [0, 0, 0, l, t, r, b, 0, 0, 0, 0] # we don't care about the other values for now
-    #         row_vals = [str(v) for v in row_vals]
-    #         row = [bbox.name] + row_vals
-    #         row_str = ' '.join(row)
-    #         rows.append(row_str)
-    #     kitti_str = '\n'.join(rows)
-    #     return kitti_str
 
     def which_bbox(self, x, y):
         """given a click location, return the index of the bounding box that the
@@ -228,7 +193,7 @@ class Annotation(object):
     def load_bboxes_from_file(self, filename):
         """load bounding boxes from a numpy array and append to this annotation"""
         # with open(filename, 'r') as file:
-        arr = np.load(filename)
+        arr = np.load(filename, allow_pickle=True)
         bboxes = []
         for row in arr:
             if len(row) == 4:
@@ -258,7 +223,8 @@ class Annotation(object):
 class AnnotationSession(object):
     """interactive user session within which we annotate multiple files"""
 
-    def __init__(self, image_dir, label_dir, max_display_size=[800,600], start_from=0, classes=False, image_names=None):
+    def __init__(self, image_dir, label_dir, max_display_size=config.max_display_size,
+                       start_from=0, classes=False, image_names=None):
         """accepts a list of filepaths to images for annotating, and begins a session to annotate them.
         if image_names are given, loop through only those images in the target directory."""
         self.image_dir = image_dir
@@ -287,8 +253,8 @@ class AnnotationSession(object):
         # prints user instructions to console
 
         print('Annotation session started.')
-        print("Left click and drag to draw bounding boxes. Right click a box, or hover and press 'd', to delete it.")
-        print("Press 'n' for next image, and 'q' to quit.")
+        print("Left click and drag to draw bounding boxes. Right click a box, or press 'd', to delete it.")
+        print("Press 'n' for next image, 'p' for previous, and 'q' to quit.")
         print(f'Progress is saved after each image.')
 
         if self.use_classes:
@@ -328,7 +294,7 @@ class AnnotationSession(object):
             self.current_annotation = Annotation()
 
         self.changes_made = False
-        anno, img = self.get_annotation(img)
+        anno, img, signal = self.get_annotation(img)
 
         if len(anno) > 0 and self.changes_made:
             if self.downsampling_factor > 1:
@@ -338,9 +304,14 @@ class AnnotationSession(object):
         else:
             print('No changes made to this annotation.')
 
+        return signal
+
     def load_image(self, filepath):
         """loads an image from filepath and downsamples it to fit inside self.max_dims.
         outputs cv2 image object."""
+
+        cv2.namedWindow('Image', 16)
+
         img = cv2.imread(filepath, 1)
         # cv2's dimensions are height,width in that order, even though in some places we use x,y:
         self.original_dims = list(reversed(img.shape[:2]))
@@ -351,10 +322,10 @@ class AnnotationSession(object):
             # more cv2 dimension reversal:
             self.new_dims = int(self.original_dims[0] / self.downsampling_factor), int(self.original_dims[1] / self.downsampling_factor)
             # self.new_dims = [int(d / self.downsampling_factor) for d in self.original_dims]
-            print(f'Original dims: {self.original_dims}')
-            print(f'Downsampling factor: {self.downsampling_factor}')
-            print(f'New dims: {self.new_dims}')
-            img = cv2.resize(img, tuple(self.new_dims))
+            # print(f'Original dims: {self.original_dims}')
+            # print(f'Downsampling factor: {self.downsampling_factor:.2}')
+            # print(f'New dims: {self.new_dims}')
+            cv2.resizeWindow('Image', tuple(self.new_dims))
         else:
             self.downsampling_factor = 1 # no downsampling
 
@@ -366,49 +337,61 @@ class AnnotationSession(object):
         self.data = {'img': img.copy()}
 
         # set the callback function for any mouse event
+
+        # img=cv2.resize(img, tuple(self.new_dims))
         cv2.imshow("Image", img)
         cv2.setMouseCallback("Image", self.mouse_handler, self.data)
         #cv2.waitKey(0)
-        self.wait_for_boxes()
+        signal = self.wait_for_boxes()
 
         anno = copy.deepcopy(self.current_annotation)
         # del self.current_annotation
 
-        return anno, self.data['img']
+        return anno, self.data['img'], signal
 
     def wait_for_boxes(self):
         # main loop that allows the user to draw boxes,
         # also responds to keypresses etc.
+
+        # call empty mouse handler to refresh bounding boxes:
+        self.mouse_handler(None, 0,0,None, self.data)
+
         done = False
 
         while not done:
             key = chr(cv2.waitKey(0))
+            signal = None
 
             if key == 'n':
                 # finish this image and pass to the next
                 done = True
             elif key == 'q':
-                print(f'Quitting annotation session...')
-                cv2.destroyAllWindows()
-                sys.exit()
+                done = True
+                signal = 'quit'
+                print(f'Saving current annotation and quitting session.')
+                # cv2.destroyAllWindows()
+                # sys.exit()
             elif key == 'd':
                 # delete the box at the current mouse position
                 image = self.data['img'].copy()
                 x,y = self.current_mouse_position
                 self.delete_box_at(x,y)
-                self.changes_made = True
-                # redraw:
-                self.current_annotation.draw(image)
-                cv2.imshow("Image", image)
-                self.data['img'] = image
+                # call empty mouse handler:
+                self.mouse_handler(None, x,y,None, self.data)
+            elif key == 'p':
+                # send signal to load the previous image instead of the next
+                done = True
+                signal = 'prev'
 
-            elif key in config.class_shortcuts:
+
+            elif self.use_classes and key in config.class_shortcuts:
                 x,y = self.current_mouse_position
                 box_id = self.current_annotation.which_bbox(x,y)
                 if box_id is not None:
                     self.current_annotation[box_id].name = config.class_shortcuts[key]
             else:
                 print(f'Detected keypress: {key}, but no behaviour defined')
+        return signal
 
 
     def mouse_handler(self, event, x, y, flags, data):
@@ -465,10 +448,11 @@ class AnnotationSession(object):
 
         elif event == cv2.EVENT_MBUTTONDOWN:
             # change class of the selected box
-            box_idx = self.current_annotation.which_bbox(x, y)
-            if box_idx is not None:
-                self.current_annotation[box_idx].cycle_class()
-                self.changes_made = True
+            if self.use_classes:
+                box_idx = self.current_annotation.which_bbox(x, y)
+                if box_idx is not None:
+                    self.current_annotation[box_idx].cycle_class()
+                    self.changes_made = True
 
         elif event == cv2.EVENT_RBUTTONDOWN:
             # delete the selected box
@@ -501,36 +485,50 @@ class AnnotationSession(object):
 
     def process_queue(self):
         self.help_message()
-        for img_path in self.image_queue:
+        i = 0
+        while i < len(self.image_queue):
+            img_path = self.image_queue[i]
             img_name = img_path.split('/')[-1]
             self.current_image_name = img_name
+            print(f'Loading image: {img_name}')
+            print(f'  (#{i+1} of {len(self.image_queue)} in queue)')
 
-            self.process_image(img_path)
+            signal = self.process_image(img_path)
+            if signal == 'quit':
+                break
+            elif signal == 'prev':
+                # go back along the image list:
+                i -= 1
+            else:
+                # otherwise, go forward
+                i += 1
 
 
+import pdb
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--start_from', '-f', help='File number to start from', type=int, default=0)
-    parser.add_argument('--img_dir', '-i', help='Directory of image files to annotate', type=str, required=True)
-    parser.add_argument('--label_dir', '-l', help='Directory of where to store labels', type=str, required=False)
-    args = parser.parse_args()
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument('--start_from', '-f', help='File number to start from', type=int, default=0)
+    # parser.add_argument('--img_dir', '-i', help='Directory of image files to annotate', type=str, required=True)
+    # parser.add_argument('--label_dir', '-l', help='Directory of where to store labels', type=str, required=False)
+    # args = parser.parse_args()
+    #
+    # if args.label_dir is None:
+    #     # default label dir is just inside the image directory:
+    #     label_dir = os.path.join(args.img_dir, 'labels')
+    # else:
+    #     label_dir = args.label_dir
+    if not os.path.exists(config.label_dir):
+        print(f'Creating label directory: {config.label_dir}')
+        os.mkdir(config.label_dir)
 
-    if args.label_dir is None:
-        # default label dir is just inside the image directory:
-        label_dir = os.path.join(args.img_dir, 'labels')
-    else:
-        label_dir = args.label_dir
-    if not os.path.exists(label_dir):
-        print(f'Creating label directory: {label_dir}')
-        os.mkdir(label_dir)
-
-    try:
-        sess = AnnotationSession(image_dir=args.img_dir, label_dir=label_dir, start_from=args.start_from)
-        sess.process_queue()
-    except Exception as e:
-        print(f'Error: {e}')
-        print(f'Shutting down annotation session')
-        cv2.destroyAllWindows()
+    # try:
+    sess = AnnotationSession(image_dir=config.image_dir, label_dir=config.label_dir)
+    sess.process_queue()
+    # except Exception as e:
+        # print(f'Error: {e}')
+        # print(f'Shutting down annotation session')
+        # cv2.destroyAllWindows()
+        # pdb.set_trace()
 
     cv2.destroyAllWindows()

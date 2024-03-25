@@ -14,6 +14,11 @@ fractional_bounding_boxes = True
 # set the default colour of generic (classless) bounding boxes, in integer RGB:
 default_colour = (255, 100, 0) # orange ish
 
+
+# maximum size of displayed images on screen: reduce this if the images do not
+# fit on your screen, or increase it if they are too small to read:
+max_display_size= (1500,900)
+
 #### parameters below are only relevant for multi-class annotation
 
 # this dict maps class label names to the colours of their bounding boxes.
