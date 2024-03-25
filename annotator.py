@@ -262,45 +262,7 @@ class AnnotationSession(object):
                     print(f'   {v}: {k}')
 
 
-    def process_image(self, img_path, label_path=None):
-        """Loads, resizes, and prompts for annotation of a single example"""
 
-        # take everything after the final slash:
-        img_name = img_path.split(os.sep)[-1]
-        print(f'Img_name: {img_name}')
-
-        # strip file extension from image name: (i.e. take everything before the final period)
-        img_name_noext = '.'.join(img_name.split('.')[:-1])
-
-
-        label_name = f'{img_name_noext}.npy'
-        print(f'Label name: {label_name}')
-
-        img = self.load_image(img_path)
-
-        label_path = os.path.join(self.label_dir, label_name)
-        if os.path.exists(label_path):
-            print(f'Loading existing annotation from: {label_path}')
-            anno = Annotation(load_from=label_path)
-            if self.downsampling_factor > 1:
-                anno = anno.resize(1/self.downsampling_factor)
-            self.current_annotation = anno
-
-        else:
-            self.current_annotation = Annotation()
-
-        self.changes_made = False
-        anno, img, signal = self.get_annotation(img)
-
-        if len(anno) > 0 and self.changes_made:
-            if self.downsampling_factor > 1:
-                # set annotation to the scale of the original, non-resized image
-                anno = anno.resize(self.downsampling_factor)
-            anno.save(label_path)
-        else:
-            print('No changes made to this annotation.')
-
-        return signal
 
     def load_image(self, filepath):
         """loads an image from filepath and downsamples it to fit inside self.max_dims.
@@ -476,6 +438,7 @@ class AnnotationSession(object):
             del self.current_annotation.bboxes[box_idx]
             self.changes_made = True
 
+
     def process_queue(self):
         self.help_message()
         i = 0
@@ -497,6 +460,89 @@ class AnnotationSession(object):
             else:
                 # otherwise, go forward
                 i += 1
+
+
+    def process_image(self, img_path, label_path=None):
+        """Loads, resizes, and prompts for annotation of a single example"""
+
+        # take everything after the final slash:
+        img_name = img_path.split(os.sep)[-1]
+        print(f'Img_name: {img_name}')
+
+        # strip file extension from image name: (i.e. take everything before the final period)
+        img_name_noext = '.'.join(img_name.split('.')[:-1])
+
+        img = self.load_image(img_path)
+
+        if label_path is None:
+            # by default, label path is based on the image name:
+            label_name = f'{img_name_noext}.npy'
+            print(f'Label name: {label_name}')
+            label_path = os.path.join(self.label_dir, label_name)
+
+        if os.path.exists(label_path):
+            print(f'Loading existing annotation from: {label_path}')
+            anno = Annotation(load_from=label_path)
+            if self.downsampling_factor > 1:
+                anno = anno.resize(1/self.downsampling_factor)
+            self.current_annotation = anno
+
+        else:
+            self.current_annotation = Annotation()
+
+        self.changes_made = False
+        anno, img, signal = self.get_annotation(img)
+
+        if len(anno) > 0 and self.changes_made:
+            if self.downsampling_factor > 1:
+                # set annotation to the scale of the original, non-resized image
+                anno = anno.resize(self.downsampling_factor)
+            anno.save(label_path)
+        else:
+            print('No changes made to this annotation.')
+
+        return signal
+    #
+    # def process_record(self, image_path, label_path):
+    #     """load a record (like a question-answer pair) and its associated image,
+    #     save with respect to the record and not the image"""
+    #
+    #     # take everything after the final slash:
+    #     img_name = img_path.split(os.sep)[-1]
+    #     print(f'Img_name: {img_name}')
+    #
+    #     # strip file extension from image name: (i.e. take everything before the final period)
+    #     img_name_noext = '.'.join(img_name.split('.')[:-1])
+    #
+    #     label_name = f'{img_name_noext}.npy'
+    #     print(f'Label name: {label_name}')
+    #
+    #     img = self.load_image(img_path)
+    #
+    #     # where this method differs from process_image is where the annotation is stored:
+    #
+    #     if os.path.exists(label_path):
+    #         print(f'Loading existing annotation from: {label_path}')
+    #         anno = Annotation(load_from=label_path)
+    #         if self.downsampling_factor > 1:
+    #             anno = anno.resize(1/self.downsampling_factor)
+    #         self.current_annotation = anno
+    #
+    #     else:
+    #         self.current_annotation = Annotation()
+    #
+    #     self.changes_made = False
+    #     anno, img, signal = self.get_annotation(img)
+    #
+    #     if len(anno) > 0 and self.changes_made:
+    #         if self.downsampling_factor > 1:
+    #             # set annotation to the scale of the original, non-resized image
+    #             anno = anno.resize(self.downsampling_factor)
+    #         anno.save(label_path)
+    #     else:
+    #         print('No changes made to this annotation.')
+    #
+    #     return signal
 
 
 if __name__ == '__main__':

@@ -43,20 +43,18 @@ while i < len(sess.image_queue):
 
     record = data[i]
 
-    sess.current_image_name = img_name
-    print(f'Loading image: {img_name}')
-    print(f'  (#{i+1} of {len(sess.image_queue)} in queue)')
+    label_path = os.path.join(config.label_dir, str(record["questionId"]) + '.npy')
 
+    sess.current_image_name = img_name
+    print(f'\nLoading image: {img_name}')
+    print(f'  (#{i+1} of {len(sess.image_queue)} in queue)')
 
     print(f'Question ID: {record["questionId"]}')
     print(f'Question types: {record["question_types"]}')
     print(f'  Question: {record["question"]}')
     print(f'  Answer/s: {"\n    ".join(record["answers"])}')
 
-
-
-
-    signal = sess.process_image(img_path)
+    signal = sess.process_image(img_path, label_path)
     if signal == 'quit':
         break
     elif signal == 'prev':
@@ -65,7 +63,5 @@ while i < len(sess.image_queue):
     else:
         # otherwise, go forward
         i += 1
-
-
 
 cv2.destroyAllWindows()
