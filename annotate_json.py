@@ -59,7 +59,7 @@ while i < len(sess.image_queue):
     print(f'Question ID: {record["questionId"]}')
     print(f'Question types: {record["question_types"]}')
     print(f'  Question: {record["question"]}')
-    print(f'  Answer/s:\n' + "\n    ".join(record["answers"]))
+    print(f'  Answer/s:\n    ' + '\n    '.join(record["answers"]))
 
     signal = sess.process_image(img_path, label_path)
     print(f'Annotation saved at: {label_path}')

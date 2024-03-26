@@ -479,6 +479,9 @@ class AnnotationSession(object):
             label_name = f'{img_name_noext}.npy'
             print(f'Label name: {label_name}')
             label_path = os.path.join(self.label_dir, label_name)
+        else:
+            label_name = label_path.split(os.sep)[-1]
+            print(f'Label name: {label_name}')
 
         if os.path.exists(label_path):
             print(f'Loading existing annotation from: {label_path}')
