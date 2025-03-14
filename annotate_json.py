@@ -52,7 +52,8 @@ while i < len(sess.image_queue):
     print(f'Question ID: {record["questionId"]}')
     print(f'Question types: {record["question_types"]}')
     print(f'  Question: {record["question"]}')
-    print(f'  Answer/s: {"\n    ".join(record["answers"])}')
+    answers_joined = "\n    ".join(record["answers"])
+    print(f'  Answer/s: {answers_joined}')
 
     signal = sess.process_image(img_path, label_path)
     if signal == 'quit':
